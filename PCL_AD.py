@@ -1,11 +1,3 @@
-# """
-# 程序执行路径异常检测框架
-# =================================
-# 核心思想:
-# 1. 通过对比学习学习正常执行路径的紧密表征
-# 2. 使用 VAE 生成"边界样本"增强模型的判别能力
-# 3. 基于密度和距离的混合异常检测方法
-# """
 from sklearn.neighbors import NearestNeighbors
 from collections import defaultdict
 import os
