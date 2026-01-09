@@ -74,7 +74,6 @@ class SpecializedInputEmbedding(nn.Module):
 # ==============================================================================
 class StructuralAwareContextModule(nn.Module):
     """
-    【已修正】
     结构感知上下文模块。边的关系偏置现在是单向的，以正确反映图的有向性。
     """
     def __init__(self, d_model, nhead, max_seq_len, dropout=0.1):
@@ -149,7 +148,6 @@ class StructuralAwareContextModule(nn.Module):
         
         if mask is not None:
             # mask 的形状通常是 [batch_size, seq_len]
-            # 我们需要将其扩展以匹配 total_scores 的形状
             mask = mask.unsqueeze(1).unsqueeze(2) # [B, 1, 1, S]
             total_scores = total_scores.masked_fill(mask == 0, float('-inf'))
             
@@ -164,7 +162,7 @@ class StructuralAwareContextModule(nn.Module):
 # class StructuralAwareContextModule(nn.Module): ##记得修改成改进后的代码
 #     """
 #     结构感知上下文模块 (Structural-Aware Context Module)
-#     【已更新】支持一个包含多种边类型的列表。
+#     支持一个包含多种边类型的列表。
 #     """
 #     def __init__(self, d_model, nhead, max_seq_len, edge_type_ids: list, dropout=0.1):
 #         super().__init__()

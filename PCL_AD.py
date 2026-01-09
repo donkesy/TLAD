@@ -73,7 +73,7 @@ def inference_collate_fn(batch_of_paths_and_names):
 
 class ContrastivePathDataset(Dataset):
     """
-    【修改版】此Dataset直接从预处理好的数据目录中加载样本。
+    此Dataset直接从预处理好的数据目录中加载样本。
     """
     def __init__(self, preprocessed_data_dir):
         """
@@ -116,7 +116,7 @@ node_type_map = {
 
 def pad_paths_to_tensors(paths):
     """
-    【修改版】此函数将预填充好的路径数据转换为模型所需的张量格式。
+    此函数将预填充好的路径数据转换为模型所需的张量格式。
     主要工作是将节点/边类型ID转换为统一的6位向量。
     """
     if not paths:
@@ -187,7 +187,7 @@ def pad_paths_to_tensors(paths):
 
 def contrastive_collate_fn(batch_of_sample_lists):
     """
-    【修改版】收集函数，现在处理的是已经预处理和预填充的样本。
+    收集函数，现在处理的是已经预处理和预填充的样本。
     """
     # 过滤掉加载失败的样本 (返回值为None)
     batch = [b for b in batch_of_sample_lists if b is not None and len(b) > 0]
@@ -218,10 +218,7 @@ def contrastive_collate_fn(batch_of_sample_lists):
 
 class PrototypicalContrastiveLoss(nn.Module):
     """
-    【简化优化版】原型对比损失 - 专为异常检测设计
-    
-    该版本简化了损失函数，使其目标更明确，避免了不同损失项之间的目标重叠，
-    并修复了分离损失的计算逻辑。
+    原型对比损失 - 专为异常检测设计
 
     核心思想:
     1. 紧凑性 (Compactness): 使用均方误差直接惩罚正常样本(anchor, positive)与
@@ -307,7 +304,7 @@ class PrototypicalContrastiveLoss(nn.Module):
         # dist_neg_proto 的形状: (B, N)
         dist_neg_proto = torch.sum((negatives_norm - self.prototype.unsqueeze(1)) ** 2, dim=2)
         
-        # 【正确实现】对每一个负样本的距离应用 Hinge Loss，然后再求平均
+        # 对每一个负样本的距离应用 Hinge Loss，然后再求平均
         # 这确保了模型会惩罚每一个离得太近的负样本
         separation_loss = F.relu(self.margin - dist_neg_proto).mean()
 
@@ -397,7 +394,7 @@ class BoundaryVAE(nn.Module):
     def generate_boundary_samples(self, normal_emb, anomaly_emb, num_samples=32, 
                                   boundary_range=(0.35, 0.85)):
         """
-        【Slerp 修改版】在正常和异常样本之间生成边界样本。
+        【Slerp】在正常和异常样本之间生成边界样本。
         """
         with torch.no_grad():
             mu_normal, _ = self.encode(normal_emb)
