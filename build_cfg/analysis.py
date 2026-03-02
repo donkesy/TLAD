@@ -21,7 +21,7 @@ calldata = {}
 # self.data_dependency的 key 是变量名， 不是具体的数值
 data_dependency = {}
 # blocks_ = {}
-alchemy_url = 'https://eth-mainnet.alchemyapi.io/v2/82CvEd4AvYSrMUT8gT98yOpfxJpAdj7_'
+alchemy_url = 'API KEY'  # 替换为你的Alchemy API密钥
 # 匹配括号前的变量名
 before_parenthesis = r'\s*(\w+)'
 # 匹配括号内的变量值
