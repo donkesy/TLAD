@@ -44,7 +44,6 @@ class InferenceDataset(Dataset):
             data = torch.load(file_path)
             # data 的格式是 {'paths': [...], 'label': ..., 'contract_name': '...'}
             paths = data['paths']
-            # 【核心改动】直接从文件中读取 contract_name
             contract_name = data['contract_name']
             
             return paths, contract_name
@@ -1027,84 +1026,6 @@ class PathAnomalyDetector:
         final_embeddings = {name: np.array(embs) for name, embs in embeddings_by_contract.items()}
         logger.info(f"特征提取完成，共 {len(final_embeddings)} 个合约。")
         
-        # label_mapping = {}
-        # with open('./data/vul_name.txt', 'r', encoding='utf-8') as f:
-        #     for line in f:
-        #         # 1. 去除行尾的换行符和首尾空白
-        #         line = line.strip()
-                
-        #         # 跳过空行
-        #         if not line:
-        #             continue
-                
-        #         # 2. 按照 Tab ('\t') 进行分割
-        #         # 如果你的txt里确实是tab，用 split('\t')
-        #         # 如果你不确定是tab还是多个空格，可以用 split()，它会自动识别所有空白间隔
-        #         parts = line.split(' ') 
-        #         # print(parts)
-                
-        #         if len(parts) >= 2:
-        #             name = parts[0].strip() # 获取地址
-        #             label = parts[1].strip()   # 获取标签 (例如 SR)
-        #             label_mapping[name] = label
-        # print("正在聚合特征向量...")
-        # # print(label_mapping)
-        # contract_names = []
-        # aggregated_vectors = []
-        # labels = []
-        # for name, embs in final_embeddings.items():
-        #     if len(embs) == 0:
-        #         continue
-                
-        #     # --- 核心操作：聚合 ---
-        #     # 策略：取平均值 (Mean Pooling)。这是最常用的方法，代表合约的“平均行为特征”。
-        #     # 如果你的异常通常只出现在某几步，也可以尝试 np.max (Max Pooling)
-        #     contract_vec = np.mean(embs, axis=0) 
-        #     contract_vec = np.mean(contract_vec, axis=0)
-        #     print(contract_vec.shape)
-            
-        #     aggregated_vectors.append(contract_vec)
-        #     contract_names.append(name)
-        #     if 'normal' in name:
-        #         labels.append('Normal')
-        #     else:
-        #         # print(name)
-        #         labels.append(label_mapping.get(name, 'Unknown'))
-        # X = np.array(aggregated_vectors)
-        # y = np.array(labels)
-
-        # print(f"聚合完成。样本数: {X.shape[0]}, 特征维度: {X.shape[1]}")
-
-        # # 3. 降维 (t-SNE)
-        # # t-SNE 比 PCA 更适合观察高维数据的局部聚类结构
-        # print("正在进行 t-SNE 降维...")
-        
-        # # Perplexity 参数通常在 5 到 50 之间，样本少时需要调小
-        # n_samples = X.shape[0]
-        # perp = min(30, n_samples - 1) if n_samples > 1 else 1
-        
-        # tsne = TSNE(n_components=2, perplexity=perp, random_state=42, init='pca', learning_rate='auto')
-        # X_embedded = tsne.fit_transform(X)
-
-        # # 4. 可视化 (Visualization)
-        # plt.figure(figsize=(10, 8))
-        
-        # # 使用 Pandas 和 Seaborn 方便绘图
-        # df_plot = pd.DataFrame({
-        #     'x': X_embedded[:, 0],
-        #     'y': X_embedded[:, 1],
-        #     'Label': y
-        # })
-        
-        # sns.scatterplot(data=df_plot, x='x', y='y', hue='Label', style='Label', s=100, palette='viridis')
-        
-        # plt.title('Visualization of Contract Embeddings by Vulnerability Type', fontsize=15)
-        # plt.xlabel('t-SNE Dimension 1')
-        # plt.ylabel('t-SNE Dimension 2')
-        # plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-        # plt.tight_layout()
-        # plt.show()
-            
         return final_embeddings
     
     def calibrate(self, normal_data_dir):

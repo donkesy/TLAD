@@ -125,7 +125,6 @@ class StructuralAwareContextModule(nn.Module):
             # edge_bias_values shape: [batch_size, num_edges, nhead]
             edge_bias_values = self.edge_proj(edge_embeds)
 
-            # 4. 【核心修正】将偏置值精确地、单向地填充到矩阵中
             # 对于位于 edge_pos 的边，它定义了 (edge_pos - 1) -> (edge_pos + 1) 的关系
             src_node_positions = edge_positions - 1
             dst_node_positions = edge_positions + 1
@@ -159,86 +158,6 @@ class StructuralAwareContextModule(nn.Module):
         
         return self.out_proj(output)
     
-# class StructuralAwareContextModule(nn.Module): ##记得修改成改进后的代码
-#     """
-#     结构感知上下文模块 (Structural-Aware Context Module)
-#     支持一个包含多种边类型的列表。
-#     """
-#     def __init__(self, d_model, nhead, max_seq_len, edge_type_ids: list, dropout=0.1):
-#         super().__init__()
-#         assert d_model % nhead == 0
-#         self.d_model = d_model
-#         self.nhead = nhead
-#         self.head_dim = d_model // nhead
-#         self.max_seq_len = max_seq_len
-
-#         # # 【改动】将边的ID列表存储下来
-#         # self.edge_type_ids = edge_type_ids
-
-#         self.q_proj = nn.Linear(d_model, d_model)
-#         self.k_proj = nn.Linear(d_model, d_model)
-#         self.v_proj = nn.Linear(d_model, d_model)
-#         self.out_proj = nn.Linear(d_model, d_model)
-#         self.dropout = nn.Dropout(dropout)
-#         self.relative_pos_embedding = nn.Embedding(2 * max_seq_len - 1, self.nhead)
-#         self.edge_proj = nn.Linear(d_model, self.nhead, bias=False)
-
-#     def forward(self, x, token_types, token_embeds, mask=None):
-#         batch_size, seq_len, _ = x.shape
-
-#         q = self.q_proj(x).view(batch_size, seq_len, self.nhead, self.head_dim).transpose(1, 2)
-#         k = self.k_proj(x).view(batch_size, seq_len, self.nhead, self.head_dim).transpose(1, 2)
-#         v = self.v_proj(x).view(batch_size, seq_len, self.nhead, self.head_dim).transpose(1, 2)
-        
-#         content_scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.head_dim)
-
-#         pos = torch.arange(seq_len, device=x.device)
-#         relative_pos = pos.unsqueeze(1) - pos.unsqueeze(0)
-#         relative_pos = relative_pos + self.max_seq_len - 1
-#         pos_bias = self.relative_pos_embedding(relative_pos).unsqueeze(0).permute(0, 3, 1, 2)
-        
-#         # --- 【核心改动逻辑】 ---
-#         # 1. 创建一个布尔掩码，标记出所有边的位置
-#         is_edge_mask = torch.zeros(seq_len, dtype=torch.bool, device=x.device)
-#         is_edge_mask[1::2] = True
-        
-#         # 2. 使用这个掩码找到所有边的索引和嵌入
-#         edge_indices = is_edge_mask.unsqueeze(0).expand(batch_size, -1).nonzero(as_tuple=False) # 使用 as_tuple=False 获取 (N, 2) 的索引
-        
-#         edge_bias_matrix = torch.zeros(batch_size, self.nhead, seq_len, seq_len, device=x.device)
-
-#         if edge_indices.numel() > 0: # 只有当序列中存在边时才执行
-#             # edge_indices 是一个 [N, 2] 的张量, N是batch中所有边的总数, [:, 0]是batch索引, [:, 1]是seq索引
-#             edge_batch_idx = edge_indices[:, 0]
-#             edge_seq_idx = edge_indices[:, 1]
-            
-#             edge_embeds = token_embeds[edge_batch_idx, edge_seq_idx] # 获取所有边的嵌入向量
-#             edge_bias_values = self.edge_proj(edge_embeds) # (num_total_edges, nhead)
-
-#             # 遍历所有找到的边，并填充偏置矩阵
-#             for i in range(edge_indices.shape[0]):
-#                 b = edge_batch_idx[i]
-#                 edge_pos = edge_seq_idx[i]
-                
-#                 if edge_pos > 0 and edge_pos < seq_len - 1:
-#                     src_node_pos, dst_node_pos = edge_pos - 1, edge_pos + 1
-#                     bias_val_for_this_edge = edge_bias_values[i] # (nhead,)
-#                     edge_bias_matrix[b, :, src_node_pos, dst_node_pos] = bias_val_for_this_edge
-#                     edge_bias_matrix[b, :, dst_node_pos, src_node_pos] = bias_val_for_this_edge
-#         # --- 核心改动结束 ---
-#         # print(f"content_scores: {content_scores.shape}, pos_bias: {pos_bias.shape}, edge_bias_matrix: {edge_bias_matrix.shape}")
-#         total_scores = content_scores + pos_bias + edge_bias_matrix
-        
-#         if mask is not None:
-#             total_scores = total_scores.masked_fill(mask == 0, float('-inf'))
-            
-#         attn_probs = F.softmax(total_scores, dim=-1)
-#         attn_probs = self.dropout(attn_probs)
-        
-#         output = torch.matmul(attn_probs, v)
-#         output = output.transpose(1, 2).contiguous().view(batch_size, seq_len, self.d_model)
-        
-#         return self.out_proj(output)
 class CausalGateUnit(nn.Module):
     """
     双探针因果门控单元 (Dual-Probe Causal Gate Unit, DPCGU)
@@ -339,64 +258,6 @@ class CausalGateUnit(nn.Module):
         h_logic = self.signal_encoder(raw_signals) # [B, L, D]
         
         return h_logic
-    
-# class CausalGateUnit(nn.Module):
-#     """
-#     因果门控单元 (Causal Gate Unit, CGU)
-#     功能: 显式地建模和验证“A之前必须存在B/C”这类硬性时序逻辑。
-#     """
-#     def __init__(self, d_model):
-#         super(CausalGateUnit, self).__init__()
-#         self.d_model = d_model
-#         self.probe_layer = nn.Linear(d_model, d_model)
-#         self.gate_layer = nn.Linear(d_model, 1)
-#         self.causal_score_transform = nn.Linear(1, d_model)
-
-#     def forward(self, q, k):
-#         batch_size, seq_len, _ = q.size()
-        
-#         # 计算前置条件探测向量
-#         precondition_probes = self.probe_layer(q)  # [B, L, D]
-#         requirement_gates = torch.sigmoid(self.gate_layer(q))  # [B, L, 1]
-        
-#         # 【关键优化】一次性计算所有相似度
-#         # similarity: [B, L, L] - 每个位置与所有历史位置的相似度
-#         similarity = torch.matmul(
-#             precondition_probes, 
-#             k.transpose(-2, -1)
-#         ) / math.sqrt(self.d_model)
-        
-#         # 创建因果掩码：只保留当前位置之前的历史
-#         causal_mask = torch.tril(
-#             torch.ones(seq_len, seq_len, device=q.device),
-#             diagonal=-1  # 不包括对角线（当前位置）
-#         )  # [L, L]
-        
-#         # 应用掩码（将未来位置设为极小值）
-#         similarity = similarity.masked_fill(
-#             causal_mask.unsqueeze(0) == 0, 
-#             float('-inf')
-#         )
-        
-#         # 对每个位置取历史中的最大相似度
-#         # 第一个位置没有历史，会得到 -inf，需要特殊处理
-#         causal_scores, _ = torch.max(similarity, dim=-1, keepdim=True)  # [B, L, 1]
-        
-#         # 处理第一个位置（没有历史记录）
-#         causal_scores[:, 0, :] = 0.0
-        
-#         # 将 -inf 替换为 0（避免 tanh 计算问题）
-#         causal_scores = causal_scores.masked_fill(
-#             torch.isinf(causal_scores), 
-#             0.0
-#         )
-        
-#         # 最终因果信号
-#         causal_signal = requirement_gates * torch.tanh(
-#             self.causal_score_transform(causal_scores)
-#         )
-        
-#         return causal_signal
 
 class FusionModule(nn.Module):
     """
