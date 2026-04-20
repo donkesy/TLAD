@@ -104,7 +104,7 @@ class ContrastivePathDataset(Dataset):
             # 返回 None, DataLoader 会自动跳过这个坏样本
             return None
 
-# 您的节点类型到6位向量的映射
+# 节点类型到6位向量的映射
 node_type_map = {
     "Asset-Transfer":   torch.tensor([0, 1, 0, 0, 0, 0], dtype=torch.float32),
     "Invocation-Node":  torch.tensor([0, 0, 1, 0, 0, 0], dtype=torch.float32),
@@ -217,25 +217,17 @@ def contrastive_collate_fn(batch_of_sample_lists):
 
 class PrototypicalContrastiveLoss(nn.Module):
     """
-    原型对比损失 - 专为异常检测设计
+    原型对比损失
 
     核心思想:
     1. 紧凑性 (Compactness): 使用均方误差直接惩罚正常样本(anchor, positive)与
        原型(prototype)之间的距离，鼓励它们聚集在原型周围。
-    2. 分离性 (Separation): 使用带有边距(margin)的Hinge Loss，强制*每一个*
+    2. 分离性 (Separation): 使用带有边距(margin)的Hinge Loss，强制每一个
        异常样本(negative)与原型保持一个最小距离，确保边界清晰。
     
     所有计算都在L2归一化的单位超球面上进行，以保证数值稳定。
     """
     def __init__(self, margin=2.0, compact_weight=0.5, prototype_momentum=0.99):
-        """
-        初始化损失函数。
-        参数:
-            margin (float): 分离损失的边距。在单位超球面上，两个向量的最大距离平方是4，
-                            因此 2.0 是一个比较强的边距。
-            compact_weight (float): 紧凑损失的权重，用于平衡两项损失。
-            prototype_momentum (float): 原型更新时的指数移动平均(EMA)动量。
-        """
         super().__init__()
         self.margin = margin
         self.compact_weight = compact_weight
@@ -249,27 +241,19 @@ class PrototypicalContrastiveLoss(nn.Module):
             self.prototype = torch.zeros(1, embed_dim, device=device)
     
     def update_prototype(self, normal_embeddings_norm):
-        """
-        【内部函数】使用EMA更新原型。
-        关键：始终保持原型在单位超球面上。
-        """
         with torch.no_grad():
             # 计算批次内正常样本的中心
             new_prototype = normal_embeddings_norm.mean(dim=0, keepdim=True)
             
-            # 如果原型是第一次初始化（零向量），直接赋值
             if self.prototype is None or self.prototype.norm() < 1e-6:
                 self.prototype = F.normalize(new_prototype, p=2, dim=1)
             else:
-                # 确保设备一致
                 if self.prototype.device != new_prototype.device:
                     self.prototype = self.prototype.to(new_prototype.device)
                     
-                # EMA 更新
                 updated_proto = (self.prototype_momentum * self.prototype + 
                                 (1 - self.prototype_momentum) * new_prototype)
                 
-                # 【关键】更新后必须再次归一化，以确保原型始终在单位球面上
                 self.prototype = F.normalize(updated_proto, p=2, dim=1)
     
     def forward(self, anchor, positive, negatives):
@@ -281,36 +265,26 @@ class PrototypicalContrastiveLoss(nn.Module):
         """
         B, D = anchor.shape
         
-        # 步骤 0: 确保原型已初始化并在正确的设备上
         if self.prototype is None:
             self.initialize_prototype(D, anchor.device)
         if self.prototype.device != anchor.device:
             self.prototype = self.prototype.to(anchor.device)
         
-        # 步骤 1: 【关键】对所有嵌入向量进行L2归一化
         anchor_norm = F.normalize(anchor, p=2, dim=1)
         positive_norm = F.normalize(positive, p=2, dim=1)
         negatives_norm = F.normalize(negatives, p=2, dim=2) # 在最后一个维度(D)上归一化
         
-        # 步骤 2: 计算紧凑损失 (Compact Loss)
-        # 目标: 拉近所有正常样本 (anchor, positive) 到原型
         dist_anchor_proto = torch.sum((anchor_norm - self.prototype) ** 2, dim=1)
         dist_pos_proto = torch.sum((positive_norm - self.prototype) ** 2, dim=1)
         compact_loss = (dist_anchor_proto.mean() + dist_pos_proto.mean()) / 2
 
-        # 步骤 3: 计算分离损失 (Separation Loss)
-        # 目标: 将所有负样本推离原型，保持一个最小边距 margin
         # dist_neg_proto 的形状: (B, N)
         dist_neg_proto = torch.sum((negatives_norm - self.prototype.unsqueeze(1)) ** 2, dim=2)
-        
-        # 对每一个负样本的距离应用 Hinge Loss，然后再求平均
-        # 这确保了模型会惩罚每一个离得太近的负样本
+
         separation_loss = F.relu(self.margin - dist_neg_proto).mean()
 
-        # 步骤 4: 组合损失
         total_loss = self.compact_weight * compact_loss + separation_loss
         
-        # 步骤 5: 更新原型 (如果损失有效)
         if not (torch.isnan(total_loss) or torch.isinf(total_loss)):
             normal_samples_norm = torch.cat([anchor_norm, positive_norm], dim=0)
             self.update_prototype(normal_samples_norm)
@@ -376,7 +350,6 @@ class BoundaryVAE(nn.Module):
         p0, p1: (N, D) 形状的张量
         t: (N, 1) 形状的插值权重
         """
-        # (这里放入上面提供的 slerp 函数代码)
         p0_norm = F.normalize(p0, p=2, dim=-1)
         p1_norm = F.normalize(p1, p=2, dim=-1)
         dot = torch.sum(p0_norm * p1_norm, dim=-1, keepdim=True)
@@ -399,7 +372,6 @@ class BoundaryVAE(nn.Module):
             mu_normal, _ = self.encode(normal_emb)
             mu_anomaly, _ = self.encode(anomaly_emb)
             
-            # 随机选择配对 (逻辑不变)
             B = min(len(mu_normal), len(mu_anomaly))
             if B == 0: return None, None # 如果其中一个为空，则无法生成
             num_samples = min(num_samples, B)
@@ -414,49 +386,15 @@ class BoundaryVAE(nn.Module):
             weights = (torch.rand(num_samples, 1, device=device) * 
                       (boundary_range[1] - boundary_range[0]) + boundary_range[0])
             
-            # --- 【核心修改】 ---
-            # 【旧代码】线性插值 (Lerp)
+            # 线性插值 (Lerp)
             # z_boundary = selected_normal * (1 - weights) + selected_anomaly * weights
             
-            # 【新代码】球形插值 (Slerp)
+            # 球形插值 (Slerp)
             z_boundary = self.slerp(selected_normal, selected_anomaly, weights)
-            # --- 结束修改 ---
             
             boundary_samples = self.decode(z_boundary)
             
             return boundary_samples, weights
-        
-    # def generate_boundary_samples(self, normal_emb, anomaly_emb, num_samples=32, 
-    #                               boundary_range=(0.3, 0.7)):
-    #     """
-    #     在正常和异常样本之间生成边界样本
-    #     boundary_range: 插值权重范围,越接近0.5越难
-    #     """
-    #     with torch.no_grad():
-    #         # 编码到潜在空间
-    #         mu_normal, _ = self.encode(normal_emb)
-    #         mu_anomaly, _ = self.encode(anomaly_emb)
-            
-    #         # 随机选择配对
-    #         B = min(len(mu_normal), len(mu_anomaly))
-    #         idx_normal = torch.randperm(len(mu_normal))[:num_samples]
-    #         idx_anomaly = torch.randperm(len(mu_anomaly))[:num_samples]
-            
-    #         selected_normal = mu_normal[idx_normal]
-    #         selected_anomaly = mu_anomaly[idx_anomaly]
-            
-    #         # 在潜在空间插值
-    #         device = normal_emb.device
-    #         weights = (torch.rand(num_samples, 1, device=device) * 
-    #                   (boundary_range[1] - boundary_range[0]) + boundary_range[0])
-            
-    #         z_boundary = selected_normal * (1 - weights) + selected_anomaly * weights
-            
-    #         # 解码回嵌入空间
-    #         boundary_samples = self.decode(z_boundary)
-            
-    #         return boundary_samples, weights
-
 
 # ============================================================================
 # 阶段 2: 训练流程
@@ -1111,21 +1049,6 @@ class PathAnomalyDetector:
         return (embeddings - self.embedding_stats['mean']) / self.embedding_stats['std']
      
     def compute_anomaly_scores(self, embeddings):
-        """
-        计算嵌入的异常分数（基于距离、重构误差和潜在空间密度的混合方法）
-        
-        这是核心的异常检测方法，完全不同于 Isolation Forest：
-        1. Distance-based Score: 到正常原型的欧氏距离
-        2. Reconstruction-based Score: VAE重构误差
-        3. Latent Density Score: 潜在空间的密度估计
-        
-        Args:
-            embeddings: torch.Tensor (N, D) 或 numpy.ndarray
-        
-        Returns:
-            dict: 包含各种分数的字典
-        """
-        # 转换为 tensor
         if isinstance(embeddings, np.ndarray):
             embeddings = torch.tensor(embeddings, dtype=torch.float32).to(self.device)
         
@@ -1191,7 +1114,6 @@ class PathAnomalyDetector:
         
         # 提取嵌入
         embeddings_dict = self.extract_embeddings_from_dir(test_data_dir)
-        # exit(0)
         
         # 对每个合约进行检测
         results_by_contract = {}
@@ -1490,15 +1412,6 @@ def main():
     
     prototype = checkpoint['prototype'] # checkpoint['prototype']
     logger.info(f"Prototype 范数: {prototype}")
-    
-    # if contrastive_loss.prototype is None or contrastive_loss.prototype.norm() < 1e-6:
-    #     logger.error("加载后的 Prototype 仍然是零！请检查 save_checkpoint 逻辑！")
-    #     # 作为备用方案，可以从单独保存的字段加载
-    #     if 'prototype' in checkpoint:
-    #         contrastive_loss.prototype = checkpoint['prototype'].to(device)
-    #         logger.info("已从独立的 'prototype' 字段恢复。")
-    #     else:
-    #         logger.info(f"✓ Prototype 加载成功，范数: {contrastive_loss.prototype.norm().item():.4f}")
                 
     # 加载嵌入统计信息
     embedding_stats = checkpoint['embedding_stats']
@@ -1566,6 +1479,5 @@ def main():
     return trainer, detector
 
 if __name__ == "__main__":
-    # 运行完整训练流程
     trainer, detector = main()
     
